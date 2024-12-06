@@ -1,8 +1,16 @@
-import type { Book } from './Book';
+import IBook from "./Book";
+export interface IAddUser {
+    username?: string;
+    email: string;
+    password: string;
+}
 
-export interface User {
-  username: string | null;
-  email: string | null;
-  password: string | null;
-  savedBooks: Book[];
+export interface IUser {
+    userId: string;
+    username: string;
+    email: string;
+    password: string;
+    bookCount: number;
+    savedBooks: IBook[];
+    isCorrectPassword(password: string): Promise<boolean>;
 }
