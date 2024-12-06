@@ -1,68 +1,73 @@
 import { Schema, model, type Document } from 'mongoose';
 import bcrypt from 'bcrypt';
+import bookSchema, { IBook } from './Book';
 
-// import schema from Book.js
-import bookSchema from './Book.js';
-import type { BookDocument } from './Book.js';
-
-export interface UserDocument extends Document {
-  id: string;
-  username: string;
-  email: string;
-  password: string;
-  savedBooks: BookDocument[];
-  isCorrectPassword(password: string): Promise<boolean>;
-  bookCount: number;
+// Interface for User, extending Mongoose Document
+export interface IUser extends Document {
+    userId: string; // Unique user ID
+    username: string; // Username for the user
+    email: string; // Email address of the user
+    password: string; // User's hashed password
+    bookCount: number; // Virtual field for the count of saved books
+    savedBooks: IBook[]; // Array of saved books adhering to the bookSchema
+    isCorrectPassword(password: string): Promise<boolean>; // Method to validate user password
 }
 
-const userSchema = new Schema<UserDocument>(
-  {
-    username: {
-      type: String,
-      required: true,
-      unique: true,
+// Define the User schema
+const userSchema = new Schema<IUser>(
+    {
+        userId: {
+            type: String,
+            required: true,
+            unique: true, // Ensures each user has a unique ID
+        },
+        username: {
+            type: String,
+            required: true,
+            unique: true, // Ensures username is unique
+        },
+        email: {
+            type: String,
+            required: true,
+            unique: true, // Ensures email is unique
+            match: [/.+@.+\..+/, 'Must use a valid email address'], // Validates email format
+        },
+        password: {
+            type: String,
+            required: true, // Password is mandatory
+        },
+        savedBooks: {
+            type: [bookSchema], // Array of books following the bookSchema
+            default: [], // Default to an empty array
+        },
     },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      match: [/.+@.+\..+/, 'Must use a valid email address'],
-    },
-    password: {
-      type: String,
-      required: true,
-    },
-    // set savedBooks to be an array of data that adheres to the bookSchema
-    savedBooks: [bookSchema],
-  },
-  // set this to use virtual below
-  {
-    toJSON: {
-      virtuals: true,
-    },
-  }
+    {
+        toJSON: {
+            virtuals: true, // Include virtual fields when converting to JSON
+        },
+    }
 );
 
-// hash user password
-userSchema.pre('save', async function (next) {
-  if (this.isNew || this.isModified('password')) {
-    const saltRounds = 10;
-    this.password = await bcrypt.hash(this.password, saltRounds);
-  }
-
-  next();
+// Middleware to hash user password before saving
+userSchema.pre<IUser>('save', async function (next) {
+    if (this.isNew || this.isModified('password')) {
+        const saltRounds = 10;
+        this.password = await bcrypt.hash(this.password, saltRounds);
+    }
+    next();
 });
 
-// custom method to compare and validate password for logging in
-userSchema.methods.isCorrectPassword = async function (password: string) {
-  return await bcrypt.compare(password, this.password);
+// Method to validate password during login
+userSchema.methods.isCorrectPassword = async function (password: string): Promise<boolean> {
+    return await bcrypt.compare(password, this.password);
 };
 
-// when we query a user, we'll also get another field called `bookCount` with the number of saved books we have
+// Virtual field to compute the count of saved books
 userSchema.virtual('bookCount').get(function () {
-  return this.savedBooks.length;
+    return this.savedBooks.length;
 });
 
-const User = model<UserDocument>('User', userSchema);
+// Create and export the User model
+const User = model<IUser>('User', userSchema);
 
 export default User;
