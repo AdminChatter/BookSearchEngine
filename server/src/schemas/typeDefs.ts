@@ -1,60 +1,62 @@
+// Import gql for defining GraphQL type definitions
 import gql from 'graphql-tag';
 
+/**
+ * GraphQL type definitions for the application.
+ * These enforce the structure of data exchanged in the API.
+ */
 const typeDefs = gql`
-  type User {
-    _id: ID
-    username: String
-    email: String
-    password: String
-    thoughts: [Thought]!
-  }
+    # Type definition for a User
+    type User {
+        _id: ID!
+        username: String!
+        email: String!
+        bookCount: Int
+        savedBooks: [Book]
+    }
 
-  type Thought {
-    _id: ID
-    thoughtText: String
-    thoughtAuthor: String
-    createdAt: String
-    comments: [Comment]!
-  }
+    # Type definition for authentication response
+    type Auth {
+        token: String
+        user: User
+    }
 
-  type Comment {
-    _id: ID
-    commentText: String
-    createdAt: String
-  }
+    # Type definition for a Book
+    type Book {
+        _id: ID!            # Unique identifier for the book (optional if using MongoDB auto-generated ID)
+        bookId: String      # Custom identifier for the book
+        title: String!      # Title of the book
+        authors: [String]   # List of authors
+        description: String!# Description of the book
+        image: String       # Image URL of the book
+        link: String        # External link to the book
+    }
 
-  input ThoughtInput {
-    thoughtText: String!
-    thoughtAuthor: String!
-  }
+    # Input type for adding or updating a book
+    input BookInput {
+        bookId: String
+        title: String!
+        authors: [String]
+        description: String!
+        image: String
+        link: String
+    }
 
-  input UserInput {
-    username: String!
-    email: String!
-    password: String!
-  }
-  
-  type Auth {
-    token: ID!
-    user: User
-  }
+    # Queries to fetch data
+    type Query {
+        users: [User]                        # Fetch all users
+        singleUser(_id: ID!): User           # Fetch a single user by ID
+        me: User                             # Fetch the authenticated user's data
+        savedBooks: User                     # Fetch saved books of the authenticated user
+    }
 
-  type Query {
-    users: [User]
-    user(username: String!): User
-    thoughts: [Thought]!
-    thought(thoughtId: ID!): Thought
-    me: User
-  }
-
-  type Mutation {
-    addUser(input: UserInput!): Auth
-    login(email: String!, password: String!): Auth
-    addThought(input: ThoughtInput!): Thought
-    addComment(thoughtId: ID!, commentText: String!): Thought
-    removeThought(thoughtId: ID!): Thought
-    removeComment(thoughtId: ID!, commentId: ID!): Thought
-  }
+    # Mutations to modify data
+    type Mutation {
+        addUser(username: String!, email: String!, password: String!): Auth # Register a new user
+        login(email: String!, password: String!): Auth                     # Login user and return authentication token
+        saveBook(userId: ID!, input: BookInput!): User                     # Save a book to the user's savedBooks array
+        removeBook(userId: ID!, bookId: String!): User                     # Remove a book from the user's savedBooks array
+    }
 `;
 
 export default typeDefs;

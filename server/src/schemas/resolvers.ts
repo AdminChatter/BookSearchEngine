@@ -1,172 +1,111 @@
-import { Thought, User } from '../models/index.js';
-import { signToken, AuthenticationError } from '../utils/auth.js'; 
+// Import models and utilities
+import User, { IUser } from "../models/User.js";
+import { IBook } from "../models/Book.js";
+import { signToken, AuthenticationError } from '../services/auth.js';
 
-// Define types for the arguments
-interface AddUserArgs {
-  input:{
-    username: string;
-    email: string;
-    password: string;
-  }
+// Define the Context type for the resolver's context
+interface Context {
+  user?: {
+    _id: string;
+  };
 }
 
-interface LoginUserArgs {
-  email: string;
-  password: string;
+// Define the Auth type for authentication responses
+interface Auth {
+  token: string;
+  user: IUser;
 }
 
-interface UserArgs {
-  username: string;
-}
-
-interface ThoughtArgs {
-  thoughtId: string;
-}
-
-interface AddThoughtArgs {
-  input:{
-    thoughtText: string;
-    thoughtAuthor: string;
-  }
-}
-
-interface AddCommentArgs {
-  thoughtId: string;
-  commentText: string;
-}
-
-interface RemoveCommentArgs {
-  thoughtId: string;
-  commentId: string;
-}
-
+// GraphQL resolvers for Query and Mutation
 const resolvers = {
   Query: {
-    users: async () => {
-      return User.find().populate('thoughts');
+    /**
+     * Fetch all users from the database.
+     */
+    users: async (): Promise<IUser[] | null> => {
+      return User.find({});
     },
-    user: async (_parent: any, { username }: UserArgs) => {
-      return User.findOne({ username }).populate('thoughts');
+
+    /**
+     * Fetch a single user by ID.
+     */
+    singleUser: async (_parent: any, { _id }: { _id: string }): Promise<IUser | null> => {
+      const params = _id ? { _id } : {};
+      return User.findOne(params);
     },
-    thoughts: async () => {
-      return await Thought.find().sort({ createdAt: -1 });
-    },
-    thought: async (_parent: any, { thoughtId }: ThoughtArgs) => {
-      return await Thought.findOne({ _id: thoughtId });
-    },
-    // Query to get the authenticated user's information
-    // The 'me' query relies on the context to check if the user is authenticated
-    me: async (_parent: any, _args: any, context: any) => {
-      // If the user is authenticated, find and return the user's information along with their thoughts
-      if (context.user) {
-        return User.findOne({ _id: context.user._id }).populate('thoughts');
+
+    /**
+     * Fetch the authenticated user's data.
+     */
+    me: async (_parent: any, _args: any, context: Context): Promise<IUser | null> => {
+      if (!context.user) {
+        throw new AuthenticationError('Not Authenticated');
       }
-      // If the user is not authenticated, throw an AuthenticationError
-      throw new AuthenticationError('Could not authenticate user.');
+      return User.findOne({ _id: context.user._id });
+    },
+
+    /**
+     * Fetch the saved books for the authenticated user.
+     */
+    savedBooks: async (_parent: any, _args: any, context: Context): Promise<IBook[] | null> => {
+      if (!context.user) {
+        throw new AuthenticationError('Not Authenticated');
+      }
+      const user = await User.findOne({ _id: context.user._id });
+      return user ? user.savedBooks : null;
     },
   },
+
   Mutation: {
-    addUser: async (_parent: any, { input }: AddUserArgs) => {
-      // Create a new user with the provided username, email, and password
-      const user = await User.create({ ...input });
-    
-      // Sign a token with the user's information
+    /**
+     * Create a new user and return an authentication token.
+     */
+    addUser: async (_parent: any, args: any): Promise<Auth> => {
+      const user = await User.create(args);
       const token = signToken(user.username, user.email, user._id);
-    
-      // Return the token and the user
       return { token, user };
     },
-    
-    login: async (_parent: any, { email, password }: LoginUserArgs) => {
-      // Find a user with the provided email
+
+    /**
+     * Authenticate a user with email and password, and return an authentication token.
+     */
+    login: async (_parent: any, { email, password }: { email: string; password: string }): Promise<Auth> => {
       const user = await User.findOne({ email });
-    
-      // If no user is found, throw an AuthenticationError
+
       if (!user) {
-        throw new AuthenticationError('Could not authenticate user.');
+        throw new AuthenticationError('No user found with this email address');
       }
-    
-      // Check if the provided password is correct
+
       const correctPw = await user.isCorrectPassword(password);
-    
-      // If the password is incorrect, throw an AuthenticationError
+
       if (!correctPw) {
-        throw new AuthenticationError('Could not authenticate user.');
+        throw new AuthenticationError('Incorrect Password');
       }
-    
-      // Sign a token with the user's information
+
       const token = signToken(user.username, user.email, user._id);
-    
-      // Return the token and the user
       return { token, user };
     },
-    addThought: async (_parent: any, { input }: AddThoughtArgs, context: any) => {
-      if (context.user) {
-        const thought = await Thought.create({ ...input });
 
-        await User.findOneAndUpdate(
-          { _id: context.user._id },
-          { $addToSet: { thoughts: thought._id } }
-        );
-
-        return thought;
-      }
-      throw AuthenticationError;
-      ('You need to be logged in!');
+    /**
+     * Save a book to the user's savedBooks array.
+     */
+    saveBook: async (_parent: any, { userId, input }: { userId: string; input: IBook }): Promise<IUser | null> => {
+      return User.findOneAndUpdate(
+        { _id: userId },
+        { $addToSet: { savedBooks: input } },
+        { new: true, runValidators: true }
+      );
     },
-    addComment: async (_parent: any, { thoughtId, commentText }: AddCommentArgs, context: any) => {
-      if (context.user) {
-        return Thought.findOneAndUpdate(
-          { _id: thoughtId },
-          {
-            $addToSet: {
-              comments: { commentText, commentAuthor: context.user.username },
-            },
-          },
-          {
-            new: true,
-            runValidators: true,
-          }
-        );
-      }
-      throw AuthenticationError;
-    },
-    removeThought: async (_parent: any, { thoughtId }: ThoughtArgs, context: any) => {
-      if (context.user) {
-        const thought = await Thought.findOneAndDelete({
-          _id: thoughtId,
-          thoughtAuthor: context.user.username,
-        });
 
-        if(!thought){
-          throw AuthenticationError;
-        }
-
-        await User.findOneAndUpdate(
-          { _id: context.user._id },
-          { $pull: { thoughts: thought._id } }
-        );
-
-        return thought;
-      }
-      throw AuthenticationError;
-    },
-    removeComment: async (_parent: any, { thoughtId, commentId }: RemoveCommentArgs, context: any) => {
-      if (context.user) {
-        return Thought.findOneAndUpdate(
-          { _id: thoughtId },
-          {
-            $pull: {
-              comments: {
-                _id: commentId,
-                commentAuthor: context.user.username,
-              },
-            },
-          },
-          { new: true }
-        );
-      }
-      throw AuthenticationError;
+    /**
+     * Remove a book from the user's savedBooks array by book ID.
+     */
+    removeBook: async (_parent: any, { userId, bookId }: { userId: string; bookId: string }): Promise<IUser | null> => {
+      return User.findOneAndUpdate(
+        { _id: userId },
+        { $pull: { savedBooks: { bookId } } },
+        { new: true }
+      );
     },
   },
 };
